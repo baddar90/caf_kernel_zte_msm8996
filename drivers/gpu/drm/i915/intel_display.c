@@ -10755,7 +10755,29 @@ void intel_mark_idle(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
-	if (!dev_priv->mm.busy)
+	hsw_package_c8_gpu_idle(dev_priv);
+
+	if (!i915_powersave)
+		return;
+
+	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+		if (!crtc->fb)
+			continue;
+
+		intel_decrease_pllclock(crtc);
+	}
+
+	if (dev_priv->info->gen >= 6)
+		gen6_rps_idle(dev->dev_private);
+}
+
+void intel_mark_fb_busy(struct drm_i915_gem_object *obj,
+			struct intel_ring_buffer *ring)
+{
+	struct drm_device *dev = obj->base.dev;
+	struct drm_crtc *crtc;
+
+	if (!i915_powersave)
 		return;
 
 	dev_priv->mm.busy = false;

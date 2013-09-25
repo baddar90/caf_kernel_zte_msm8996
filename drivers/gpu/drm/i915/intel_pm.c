@@ -4456,7 +4456,32 @@ static void gen6_set_rps(struct drm_device *dev, u8 val)
 	trace_intel_gpu_freq_change(intel_gpu_freq(dev_priv, val));
 }
 
-static void valleyview_set_rps(struct drm_device *dev, u8 val)
+void gen6_rps_idle(struct drm_i915_private *dev_priv)
+{
+	mutex_lock(&dev_priv->rps.hw_lock);
+	if (dev_priv->info->is_valleyview)
+		valleyview_set_rps(dev_priv->dev, dev_priv->rps.min_delay);
+	else
+		gen6_set_rps(dev_priv->dev, dev_priv->rps.min_delay);
+	mutex_unlock(&dev_priv->rps.hw_lock);
+}
+
+void gen6_rps_boost(struct drm_i915_private *dev_priv)
+{
+	mutex_lock(&dev_priv->rps.hw_lock);
+	if (dev_priv->info->is_valleyview)
+		valleyview_set_rps(dev_priv->dev, dev_priv->rps.max_delay);
+	else
+		gen6_set_rps(dev_priv->dev, dev_priv->rps.max_delay);
+	mutex_unlock(&dev_priv->rps.hw_lock);
+}
+
+/*
+ * Wait until the previous freq change has completed,
+ * or the timeout elapsed, and then update our notion
+ * of the current GPU frequency.
+ */
+static void vlv_update_rps_cur_delay(struct drm_i915_private *dev_priv)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
@@ -5215,47 +5240,6 @@ static int valleyview_rps_min_freq(struct drm_i915_private *dev_priv)
 	return vlv_punit_read(dev_priv, PUNIT_REG_GPU_LFM) & 0xff;
 }
 
-/* Check that the pctx buffer wasn't move under us. */
-static void valleyview_check_pctx(struct drm_i915_private *dev_priv)
-{
-	unsigned long pctx_addr = I915_READ(VLV_PCBR) & ~4095;
-
-	WARN_ON(pctx_addr != dev_priv->mm.stolen_base +
-			     dev_priv->vlv_pctx->stolen->start);
-}
-
-
-/* Check that the pcbr address is not empty. */
-static void cherryview_check_pctx(struct drm_i915_private *dev_priv)
-{
-	unsigned long pctx_addr = I915_READ(VLV_PCBR) & ~4095;
-
-	WARN_ON((pctx_addr >> VLV_PCBR_ADDR_SHIFT) == 0);
-}
-
-static void cherryview_setup_pctx(struct drm_device *dev)
-{
-	struct drm_i915_private *dev_priv = dev->dev_private;
-	unsigned long pctx_paddr, paddr;
-	struct i915_gtt *gtt = &dev_priv->gtt;
-	u32 pcbr;
-	int pctx_size = 32*1024;
-
-	WARN_ON(!mutex_is_locked(&dev->struct_mutex));
-
-	pcbr = I915_READ(VLV_PCBR);
-	if ((pcbr >> VLV_PCBR_ADDR_SHIFT) == 0) {
-		DRM_DEBUG_DRIVER("BIOS didn't set up PCBR, fixing up\n");
-		paddr = (dev_priv->mm.stolen_base +
-			 (gtt->stolen_size - pctx_size));
-
-		pctx_paddr = (paddr & (~4095));
-		I915_WRITE(VLV_PCBR, pctx_paddr);
-	}
-
-	DRM_DEBUG_DRIVER("PCBR: 0x%08x\n", I915_READ(VLV_PCBR));
-}
-
 static void valleyview_setup_pctx(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
@@ -5619,8 +5603,67 @@ static void valleyview_enable_rps(struct drm_device *dev)
 			 dev_priv->rps.cur_freq);
 
 	DRM_DEBUG_DRIVER("setting GPU freq to %d MHz (%u)\n",
-			 intel_gpu_freq(dev_priv, dev_priv->rps.efficient_freq),
-			 dev_priv->rps.efficient_freq);
+			 vlv_gpu_freq(dev_priv->mem_freq,
+				      dev_priv->rps.rpe_delay),
+			 dev_priv->rps.rpe_delay);
+
+	valleyview_set_rps(dev_priv->dev, dev_priv->rps.rpe_delay);
+
+	gen6_enable_rps_interrupts(dev);
+
+	gen6_gt_force_wake_put(dev_priv);
+}
+
+void ironlake_teardown_rc6(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	if (dev_priv->ips.renderctx) {
+		i915_gem_object_unpin(dev_priv->ips.renderctx);
+		drm_gem_object_unreference(&dev_priv->ips.renderctx->base);
+		dev_priv->ips.renderctx = NULL;
+	}
+
+	if (dev_priv->ips.pwrctx) {
+		i915_gem_object_unpin(dev_priv->ips.pwrctx);
+		drm_gem_object_unreference(&dev_priv->ips.pwrctx->base);
+		dev_priv->ips.pwrctx = NULL;
+	}
+}
+
+static void ironlake_disable_rc6(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	if (I915_READ(PWRCTXA)) {
+		/* Wake the GPU, prevent RC6, then restore RSTDBYCTL */
+		I915_WRITE(RSTDBYCTL, I915_READ(RSTDBYCTL) | RCX_SW_EXIT);
+		wait_for(((I915_READ(RSTDBYCTL) & RSX_STATUS_MASK) == RSX_STATUS_ON),
+			 50);
+
+		I915_WRITE(PWRCTXA, 0);
+		POSTING_READ(PWRCTXA);
+
+		I915_WRITE(RSTDBYCTL, I915_READ(RSTDBYCTL) & ~RCX_SW_EXIT);
+		POSTING_READ(RSTDBYCTL);
+	}
+}
+
+static int ironlake_setup_rc6(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	if (dev_priv->ips.renderctx == NULL)
+		dev_priv->ips.renderctx = intel_alloc_context_page(dev);
+	if (!dev_priv->ips.renderctx)
+		return -ENOMEM;
+
+	if (dev_priv->ips.pwrctx == NULL)
+		dev_priv->ips.pwrctx = intel_alloc_context_page(dev);
+	if (!dev_priv->ips.pwrctx) {
+		ironlake_teardown_rc6(dev);
+		return -ENOMEM;
+	}
 
 	valleyview_set_rps(dev_priv->dev, dev_priv->rps.efficient_freq);
 
@@ -6170,8 +6213,8 @@ void intel_disable_gt_powersave(struct drm_device *dev)
 	if (IS_IRONLAKE_M(dev)) {
 		ironlake_disable_drps(dev);
 	} else if (INTEL_INFO(dev)->gen >= 6) {
-		intel_suspend_gt_powersave(dev);
-
+		cancel_delayed_work_sync(&dev_priv->rps.delayed_resume_work);
+		cancel_work_sync(&dev_priv->rps.work);
 		mutex_lock(&dev_priv->rps.hw_lock);
 		if (INTEL_INFO(dev)->gen >= 9)
 			gen9_disable_rps(dev);

@@ -1220,6 +1220,14 @@ static int __i915_spin_request(struct drm_i915_gem_request *req, int state)
 	return -EAGAIN;
 }
 
+static bool can_wait_boost(struct drm_i915_file_private *file_priv)
+{
+	if (file_priv == NULL)
+		return true;
+
+	return !atomic_xchg(&file_priv->rps_wait_boost, true);
+}
+
 /**
  * __i915_wait_request - wait until execution of request has finished
  * @req: duh!
@@ -1240,8 +1248,8 @@ static int __i915_spin_request(struct drm_i915_gem_request *req, int state)
 int __i915_wait_request(struct drm_i915_gem_request *req,
 			unsigned reset_counter,
 			bool interruptible,
-			s64 *timeout,
-			struct intel_rps_client *rps)
+			struct timespec *timeout,
+			struct drm_i915_file_private *file_priv)
 {
 	struct intel_engine_cs *ring = i915_gem_request_get_ring(req);
 	struct drm_device *dev = ring->dev;
@@ -1262,19 +1270,17 @@ int __i915_wait_request(struct drm_i915_gem_request *req,
 	if (i915_gem_request_completed(req, true))
 		return 0;
 
-	timeout_expire = 0;
-	if (timeout) {
-		if (WARN_ON(*timeout < 0))
-			return -EINVAL;
-
-		if (*timeout == 0)
-			return -ETIME;
-
-		timeout_expire = jiffies + nsecs_to_jiffies_timeout(*timeout);
+	if (dev_priv->info->gen >= 6 && can_wait_boost(file_priv)) {
+		gen6_rps_boost(dev_priv);
+		if (file_priv)
+			mod_delayed_work(dev_priv->wq,
+					 &file_priv->mm.idle_work,
+					 msecs_to_jiffies(100));
 	}
 
-	if (INTEL_INFO(dev_priv)->gen >= 6)
-		gen6_rps_boost(dev_priv, rps, req->emitted_jiffies);
+	if (!(dev_priv->gpu_error.test_irq_rings & intel_ring_flag(ring)) &&
+	    WARN_ON(!ring->irq_get(ring)))
+		return -ENODEV;
 
 	/* Record current time in case interrupted by signal, or wedged */
 	trace_i915_gem_request_wait_begin(req);
@@ -1480,7 +1486,27 @@ i915_wait_request(struct drm_i915_gem_request *req)
 	if (ret)
 		return ret;
 
-	__i915_gem_request_retire__upto(req);
+	return __wait_seqno(ring, seqno,
+			    atomic_read(&dev_priv->gpu_error.reset_counter),
+			    interruptible, NULL, NULL);
+}
+
+static int
+i915_gem_object_wait_rendering__tail(struct drm_i915_gem_object *obj,
+				     struct intel_ring_buffer *ring)
+{
+	i915_gem_retire_requests_ring(ring);
+
+	/* Manually manage the write flush as we may have not yet
+	 * retired the buffer.
+	 *
+	 * Note that the last_write_seqno is always the earlier of
+	 * the two (read/write) seqno, so if we haved successfully waited,
+	 * we know we have passed the last write.
+	 */
+	obj->last_write_seqno = 0;
+	obj->base.write_domain &= ~I915_GEM_GPU_DOMAINS;
+
 	return 0;
 }
 
@@ -1545,7 +1571,7 @@ i915_gem_object_retire_request(struct drm_i915_gem_object *obj,
  */
 static __must_check int
 i915_gem_object_wait_rendering__nonblocking(struct drm_i915_gem_object *obj,
-					    struct intel_rps_client *rps,
+					    struct drm_file *file,
 					    bool readonly)
 {
 	struct drm_device *dev = obj->base.dev;
@@ -1587,9 +1613,7 @@ i915_gem_object_wait_rendering__nonblocking(struct drm_i915_gem_object *obj,
 	}
 
 	mutex_unlock(&dev->struct_mutex);
-	for (i = 0; ret == 0 && i < n; i++)
-		ret = __i915_wait_request(requests[i], reset_counter, true,
-					  NULL, rps);
+	ret = __wait_seqno(ring, seqno, reset_counter, true, NULL, file->driver_priv);
 	mutex_lock(&dev->struct_mutex);
 
 	for (i = 0; i < n; i++) {
@@ -1648,9 +1672,7 @@ i915_gem_set_domain_ioctl(struct drm_device *dev, void *data,
 	 * We will repeat the flush holding the lock in the normal manner
 	 * to catch cases where we are gazumped.
 	 */
-	ret = i915_gem_object_wait_rendering__nonblocking(obj,
-							  to_rps_client(file),
-							  !write_domain);
+	ret = i915_gem_object_wait_rendering__nonblocking(obj, file, !write_domain);
 	if (ret)
 		goto unref;
 
@@ -2613,10 +2635,14 @@ void __i915_add_request(struct drm_i915_gem_request *request,
 
 	i915_queue_hangcheck(ring->dev);
 
-	queue_delayed_work(dev_priv->wq,
-			   &dev_priv->mm.retire_work,
-			   round_jiffies_up_relative(HZ));
-	intel_mark_busy(dev_priv->dev);
+		if (was_empty) {
+			cancel_delayed_work_sync(&dev_priv->mm.idle_work);
+			queue_delayed_work(dev_priv->wq,
+					   &dev_priv->mm.retire_work,
+					   round_jiffies_up_relative(HZ));
+			intel_mark_busy(dev_priv->dev);
+		}
+	}
 
 	/* Sanity check that the reserved size was large enough. */
 	intel_ring_reserved_space_end(ringbuf);
@@ -2627,7 +2653,14 @@ static bool i915_context_is_banned(struct drm_i915_private *dev_priv,
 {
 	unsigned long elapsed;
 
-	elapsed = get_seconds() - ctx->hang_stats.guilty_ts;
+	if (!file_priv)
+		return;
+
+	spin_lock(&file_priv->mm.lock);
+	list_del(&request->client_list);
+	request->file_priv = NULL;
+	spin_unlock(&file_priv->mm.lock);
+}
 
 	if (ctx->hang_stats.banned)
 		return true;
@@ -2923,23 +2956,14 @@ i915_gem_retire_requests_ring(struct intel_engine_cs *ring)
 bool
 i915_gem_retire_requests(struct drm_device *dev)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-	struct intel_engine_cs *ring;
+	drm_i915_private_t *dev_priv = dev->dev_private;
+	struct intel_ring_buffer *ring;
 	bool idle = true;
 	int i;
 
 	for_each_ring(ring, dev_priv, i) {
 		i915_gem_retire_requests_ring(ring);
 		idle &= list_empty(&ring->request_list);
-		if (i915.enable_execlists) {
-			unsigned long flags;
-
-			spin_lock_irqsave(&ring->execlist_lock, flags);
-			idle &= list_empty(&ring->execlist_queue);
-			spin_unlock_irqrestore(&ring->execlist_lock, flags);
-
-			intel_execlists_retire_requests(ring);
-		}
 	}
 
 	if (idle)
@@ -2974,25 +2998,8 @@ i915_gem_idle_work_handler(struct work_struct *work)
 {
 	struct drm_i915_private *dev_priv =
 		container_of(work, typeof(*dev_priv), mm.idle_work.work);
-	struct drm_device *dev = dev_priv->dev;
-	struct intel_engine_cs *ring;
-	int i;
 
-	for_each_ring(ring, dev_priv, i)
-		if (!list_empty(&ring->request_list))
-			return;
-
-	intel_mark_idle(dev);
-
-	if (mutex_trylock(&dev->struct_mutex)) {
-		struct intel_engine_cs *ring;
-		int i;
-
-		for_each_ring(ring, dev_priv, i)
-			i915_gem_batch_pool_fini(&ring->batch_pool);
-
-		mutex_unlock(&dev->struct_mutex);
-	}
+	intel_mark_idle(dev_priv->dev);
 }
 
 /**
@@ -3102,13 +3109,9 @@ i915_gem_wait_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 	mutex_unlock(&dev->struct_mutex);
 
-	for (i = 0; i < n; i++) {
-		if (ret == 0)
-			ret = __i915_wait_request(req[i], reset_counter, true,
-						  args->timeout_ns > 0 ? &args->timeout_ns : NULL,
-						  file->driver_priv);
-		i915_gem_request_unreference__unlocked(req[i]);
-	}
+	ret = __wait_seqno(ring, seqno, reset_counter, true, timeout, file->driver_priv);
+	if (timeout)
+		args->timeout_ns = timespec_to_ns(timeout);
 	return ret;
 
 out:
@@ -4104,7 +4107,7 @@ i915_gem_ring_throttle(struct drm_device *dev, struct drm_file *file)
 	if (target == NULL)
 		return 0;
 
-	ret = __i915_wait_request(target, reset_counter, true, NULL, NULL);
+	ret = __wait_seqno(ring, seqno, reset_counter, true, NULL, NULL);
 	if (ret == 0)
 		queue_delayed_work(dev_priv->wq, &dev_priv->mm.retire_work, 0);
 
@@ -4614,12 +4617,7 @@ i915_gem_suspend(struct drm_device *dev)
 
 	cancel_delayed_work_sync(&dev_priv->gpu_error.hangcheck_work);
 	cancel_delayed_work_sync(&dev_priv->mm.retire_work);
-	flush_delayed_work(&dev_priv->mm.idle_work);
-
-	/* Assert that we sucessfully flushed all the work and
-	 * reset the GPU back to its idle, low power state.
-	 */
-	WARN_ON(dev_priv->mm.busy);
+	cancel_delayed_work_sync(&dev_priv->mm.idle_work);
 
 	return 0;
 
@@ -5124,16 +5122,78 @@ void i915_gem_track_fb(struct drm_i915_gem_object *old,
 		old->frontbuffer_bits &= ~frontbuffer_bits;
 	}
 
-	if (new) {
-		WARN_ON(!mutex_is_locked(&new->base.dev->struct_mutex));
-		WARN_ON(new->frontbuffer_bits & frontbuffer_bits);
-		new->frontbuffer_bits |= frontbuffer_bits;
+	i915_gem_chipset_flush(dev);
+	return 0;
+}
+
+void i915_gem_release(struct drm_device *dev, struct drm_file *file)
+{
+	struct drm_i915_file_private *file_priv = file->driver_priv;
+
+	cancel_delayed_work_sync(&file_priv->mm.idle_work);
+
+	/* Clean up our request list when the client is going away, so that
+	 * later retire_requests won't dereference our soon-to-be-gone
+	 * file_priv.
+	 */
+	spin_lock(&file_priv->mm.lock);
+	while (!list_empty(&file_priv->mm.request_list)) {
+		struct drm_i915_gem_request *request;
+
+		request = list_first_entry(&file_priv->mm.request_list,
+					   struct drm_i915_gem_request,
+					   client_list);
+		list_del(&request->client_list);
+		request->file_priv = NULL;
 	}
 }
 
-/* All the new VM stuff */
-u64 i915_gem_obj_offset(struct drm_i915_gem_object *o,
-			struct i915_address_space *vm)
+static void
+i915_gem_file_idle_work_handler(struct work_struct *work)
+{
+	struct drm_i915_file_private *file_priv =
+		container_of(work, typeof(*file_priv), mm.idle_work.work);
+
+	atomic_set(&file_priv->rps_wait_boost, false);
+}
+
+int i915_gem_open(struct drm_device *dev, struct drm_file *file)
+{
+	struct drm_i915_file_private *file_priv;
+
+	DRM_DEBUG_DRIVER("\n");
+
+	file_priv = kzalloc(sizeof(*file_priv), GFP_KERNEL);
+	if (!file_priv)
+		return -ENOMEM;
+
+	file->driver_priv = file_priv;
+	file_priv->dev_priv = dev->dev_private;
+
+	spin_lock_init(&file_priv->mm.lock);
+	INIT_LIST_HEAD(&file_priv->mm.request_list);
+	INIT_DELAYED_WORK(&file_priv->mm.idle_work,
+			  i915_gem_file_idle_work_handler);
+
+	idr_init(&file_priv->context_idr);
+
+	return 0;
+}
+
+static bool mutex_is_locked_by(struct mutex *mutex, struct task_struct *task)
+{
+	if (!mutex_is_locked(mutex))
+		return false;
+
+#if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_MUTEXES)
+	return mutex->owner == task;
+#else
+	/* Since UP may be pre-empted, we cannot assume that we own the lock */
+	return false;
+#endif
+}
+
+static bool i915_gem_shrinker_lock(struct drm_device *dev, bool *unlock)
 {
 	struct drm_i915_private *dev_priv = o->base.dev->dev_private;
 	struct i915_vma *vma;

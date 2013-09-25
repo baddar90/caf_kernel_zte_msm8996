@@ -1149,8 +1149,6 @@ static void gen6_pm_rps_work(struct work_struct *work)
 	new_delay += adj;
 	new_delay = clamp_t(int, new_delay, min, max);
 
-	intel_set_rps(dev_priv->dev, new_delay);
-
 	mutex_unlock(&dev_priv->rps.hw_lock);
 }
 
