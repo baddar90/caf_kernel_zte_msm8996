@@ -237,4 +237,6 @@ config DEVFREQ_SPDM
 	  This driver allows any SPDM based client to vote for bandwidth.
 	  Used with the MSM SPDM Hypervisor Governor.
 
+source "drivers/devfreq/event/Kconfig"
+
 endif # PM_DEVFREQ
