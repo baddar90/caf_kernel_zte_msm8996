@@ -97,6 +97,10 @@ struct zbud_pool {
 	struct list_head lru;
 	u64 pages_nr;
 	struct zbud_ops *ops;
+#ifdef CONFIG_ZPOOL
+	struct zpool *zpool;
+	const struct zpool_ops *zpool_ops;
+#endif
 };
 
 /*
@@ -131,7 +135,8 @@ static struct zbud_ops zbud_zpool_ops = {
 };
 
 static void *zbud_zpool_create(char *name, gfp_t gfp,
-			struct zpool_ops *zpool_ops)
+			       const struct zpool_ops *zpool_ops,
+			       struct zpool *zpool)
 {
 	return zbud_create_pool(gfp, &zbud_zpool_ops);
 }
