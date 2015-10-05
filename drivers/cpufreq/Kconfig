@@ -217,7 +217,6 @@ config CPU_FREQ_GOV_INTERACTIVE
 
 	  If in doubt, say N.
 
-
 config CPU_FREQ_GOV_IMPULSE
 	tristate "'impulse' cpufreq policy governor"
 	help
