@@ -744,12 +744,15 @@ static ssize_t store_scaling_max_freq_hardlimit(struct cpufreq_policy *policy, c
  */
 static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char *buf, size_t count)
 {
-	unsigned int ret = -EINVAL;
+	int ret;
 	struct cpufreq_policy new_policy;
 
 	ret = cpufreq_get_policy(&new_policy, policy->cpu);
 	if (ret)
 		return -EINVAL;
+
+	new_policy.min = new_policy.user_policy.min;
+	new_policy.max = new_policy.user_policy.max;
 
 	ret = sscanf(buf, "%u", &new_policy.min);
 	if (ret != 1)
@@ -761,14 +764,18 @@ static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char 
 		if (new_policy.min < min_freq_hardlimit[map_core_to_cluster(policy->cpu)])
 			new_policy.min = min_freq_hardlimit[map_core_to_cluster(policy->cpu)];
 
-	ret = cpufreq_driver->verify(&new_policy);
-	if (ret)
-		pr_err("cpufreq: Frequency verification failed\n");
+	cpufreq_verify_within_cpu_limits(&new_policy);
+	if (new_policy.min > new_policy.user_policy.max
+	    || new_policy.max < new_policy.user_policy.min)
+		return -EINVAL;
 
 	policy->user_policy.min = new_policy.min;
-	ret = cpufreq_set_policy(policy, &new_policy);
 
-	return ret ? ret : count;
+	ret = cpufreq_set_policy(policy, &new_policy);
+	if (ret)
+		pr_warn("User policy not enforced yet!\n");
+
+	return count;
 }
 
 
@@ -777,12 +784,15 @@ static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char 
  */
 static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy, const char *buf, size_t count)
 {
-	unsigned int ret = -EINVAL;
+	int ret;
 	struct cpufreq_policy new_policy;
 
 	ret = cpufreq_get_policy(&new_policy, policy->cpu);
 	if (ret)
 		return -EINVAL;
+
+	new_policy.min = new_policy.user_policy.min;
+	new_policy.max = new_policy.user_policy.max;
 
 	ret = sscanf(buf, "%u", &new_policy.max);
 	if (ret != 1)
@@ -794,14 +804,18 @@ static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy, const char 
 		if (new_policy.max > max_freq_hardlimit[map_core_to_cluster(policy->cpu)])
 			new_policy.max = max_freq_hardlimit[map_core_to_cluster(policy->cpu)];
 
-	ret = cpufreq_driver->verify(&new_policy);
-	if (ret)
-		pr_err("cpufreq: Frequency verification failed\n");
+	cpufreq_verify_within_cpu_limits(&new_policy);
+	if (new_policy.min > new_policy.user_policy.max
+	    || new_policy.max < new_policy.user_policy.min)
+		return -EINVAL;
 
 	policy->user_policy.max = new_policy.max;
-	ret = cpufreq_set_policy(policy, &new_policy);
 
-	return ret ? ret : count;
+	ret = cpufreq_set_policy(policy, &new_policy);
+	if (ret)
+		pr_warn("User policy not enforced yet!\n");
+
+	return count;
 }
 
 /**
