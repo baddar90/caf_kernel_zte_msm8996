@@ -349,6 +349,7 @@ void __msm_fence_worker(struct work_struct *work);
 
 int msm_atomic_commit(struct drm_device *dev,
 		struct drm_atomic_state *state, bool async);
+int msm_drm_notifier_call_chain(unsigned long val, void *v);
 
 int msm_register_mmu(struct drm_device *dev, struct msm_mmu *mmu);
 

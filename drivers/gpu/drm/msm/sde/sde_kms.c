@@ -12,6 +12,7 @@
 
 #include <drm/drm_crtc.h>
 #include <linux/debugfs.h>
+#include <linux/msm_drm_notify.h>
 
 #include "msm_drv.h"
 #include "msm_mmu.h"
@@ -436,6 +437,71 @@ static int get_clk(struct platform_device *pdev, struct clk **clkp,
 		*clkp = clk;
 
 	return 0;
+}
+
+static int _sde_kms_get_blank(struct drm_crtc_state *crtc_state,
+			      struct drm_connector_state *conn_state)
+{
+	int lp_mode, blank;
+
+	if (crtc_state->active)
+		lp_mode = sde_connector_get_property(conn_state,
+						     CONNECTOR_PROP_LP);
+	else
+		lp_mode = SDE_MODE_DPMS_OFF;
+
+	switch (lp_mode) {
+	case SDE_MODE_DPMS_ON:
+		blank = MSM_DRM_BLANK_UNBLANK;
+		break;
+	case SDE_MODE_DPMS_LP1:
+	case SDE_MODE_DPMS_LP2:
+		blank = MSM_DRM_BLANK_LP;
+		break;
+	case SDE_MODE_DPMS_OFF:
+	default:
+		blank = MSM_DRM_BLANK_POWERDOWN;
+		break;
+	}
+
+	return blank;
+}
+
+static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
+				   unsigned long event)
+{
+	struct drm_connector *connector;
+	struct drm_connector_state *old_conn_state;
+	struct drm_crtc_state *old_crtc_state;
+	int i, old_mode, new_mode;
+
+	for_each_connector_in_state(old_state, connector, old_conn_state, i) {
+		if (!connector->state->crtc)
+			continue;
+
+		new_mode = _sde_kms_get_blank(connector->state->crtc->state,
+					      connector->state);
+		if (old_conn_state->crtc) {
+			old_crtc_state = drm_atomic_get_existing_crtc_state(
+					old_state, old_conn_state->crtc);
+			old_mode = _sde_kms_get_blank(old_crtc_state,
+						      old_conn_state);
+		} else {
+			old_mode = MSM_DRM_BLANK_POWERDOWN;
+		}
+
+		if (old_mode != new_mode) {
+			struct msm_drm_notifier notifier_data;
+
+			pr_debug("power mode change detected %d->%d\n",
+				 old_mode, new_mode);
+
+			notifier_data.data = &new_mode;
+			notifier_data.id = connector->state->crtc->index;
+
+			msm_drm_notifier_call_chain(event, &notifier_data);
+		}
+	}
 }
 
 struct sde_kms *sde_hw_setup(struct platform_device *pdev)
