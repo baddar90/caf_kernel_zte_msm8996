@@ -31,10 +31,376 @@
 #include <linux/platform_device.h>
 #include <linux/input/synaptics_dsx_v2.h>
 #include "synaptics_dsx_core.h"
+<<<<<<< HEAD
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #if defined(CONFIG_SECURE_TOUCH)
 #include <linux/pm_runtime.h>
+=======
+
+#define SYN_I2C_RETRY_TIMES 4
+
+/*
+#define I2C_BURST_LIMIT 255
+*/
+/*
+#define XFER_MSGS_LIMIT 8
+*/
+
+static unsigned char *wr_buf;
+
+static struct synaptics_dsx_hw_interface hw_if;
+
+static struct platform_device *synaptics_dsx_i2c_device;
+
+#ifdef CONFIG_OF
+static void dump_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
+{
+	int i, j;
+	char tmp[256] = {0};
+	dev_dbg(dev, "START of device tree dump:\n");
+	dev_dbg(dev, "power_gpio = %d\n", bdata->power_gpio);
+	dev_dbg(dev, "reset_gpio = %d\n", bdata->reset_gpio);
+	dev_dbg(dev, "irq_gpio = %d\n", bdata->irq_gpio);
+	dev_dbg(dev, "power_on_state = %d\n", (int)bdata->power_on_state);
+	dev_dbg(dev, "reset_on_state = %d\n", (int)bdata->reset_on_state);
+	dev_dbg(dev, "power_delay_ms = %d\n", (int)bdata->power_delay_ms);
+	dev_dbg(dev, "reset_delay_ms = %d\n", (int)bdata->reset_delay_ms);
+	dev_dbg(dev, "reset_active_ms = %d\n", (int)bdata->reset_active_ms);
+	dev_dbg(dev, "cut_off_power = %d\n", (int)bdata->cut_off_power);
+	dev_dbg(dev, "swap_axes = %d\n", (int)bdata->swap_axes);
+	dev_dbg(dev, "x_flip = %d\n", (int)bdata->x_flip);
+	dev_dbg(dev, "y_flip = %d\n", (int)bdata->y_flip);
+	dev_dbg(dev, "ub_i2c_addr = %d\n", (int)bdata->ub_i2c_addr);
+	dev_dbg(dev, "lockdown_area = %d\n", (int)bdata->lockdown_area);
+
+	for (i = 0; i < bdata->tp_id_num; i++)
+		snprintf(tmp, 256, "%s %d", tmp, bdata->tp_id_bytes[i]);
+	dev_dbg(dev, "tp_id_bytes =%s\n", tmp);
+
+	dev_dbg(dev, "config_array_size = %d\n", (int)bdata->config_array_size);
+	for (i = 0; i < bdata->config_array_size; i++) {
+		memset(tmp, 0, sizeof(tmp));
+		for (j = 0; j < bdata->tp_id_num; j++)
+			snprintf(tmp, 256, "%s 0x%0x", tmp, bdata->config_array[i].tp_ids[j]);
+		dev_dbg(dev, "config[%d].tp_id =%s", i, tmp);
+
+		dev_dbg(dev, "config[%d].fw_name = %s\n", i, bdata->config_array[i].fw_name);
+	}
+	dev_dbg(dev, "END of device tree dump\n");
+}
+
+static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
+{
+	int retval;
+	u32 value;
+	const char *name;
+	struct synaptics_dsx_config_info *config_info;
+	struct property *prop;
+	struct device_node *temp, *np = dev->of_node;
+
+	bdata->irq_gpio = of_get_named_gpio_flags(np,
+			"synaptics,irq-gpio", 0, NULL);
+	if (bdata->irq_gpio < 0)
+		return -EINVAL;
+
+	retval = of_property_read_u32(np, "synaptics,irq-on-state",
+			&value);
+	if (retval < 0)
+		bdata->irq_on_state = 0;
+	else
+		bdata->irq_on_state = value;
+
+	retval = of_property_read_u32(np, "synaptics,irq-flags", &value);
+	if (retval < 0)
+		return retval;
+	else
+		bdata->irq_flags = value;
+
+	retval = of_property_read_string(np, "synaptics,pwr-reg-name", &name);
+	if (retval == -EINVAL)
+		bdata->pwr_reg_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->pwr_reg_name = name;
+
+	retval = of_property_read_string(np, "synaptics,lab-reg-name", &name);
+	if (retval == -EINVAL)
+		bdata->lab_reg_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->lab_reg_name = name;
+
+	retval = of_property_read_string(np, "synaptics,ibb-reg-name", &name);
+	if (retval == -EINVAL)
+		bdata->ibb_reg_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->ibb_reg_name = name;
+
+	retval = of_property_read_string(np, "synaptics,disp-reg-name", &name);
+	if (retval == -EINVAL)
+		bdata->disp_reg_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->disp_reg_name = name;
+
+	retval = of_property_read_string(np, "synaptics,bus-reg-name", &name);
+	if (retval == -EINVAL)
+		bdata->bus_reg_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->bus_reg_name = name;
+
+	retval = of_property_read_string(np, "synaptics,power-gpio-name", &name);
+	if (retval == -EINVAL)
+		bdata->power_gpio_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->power_gpio_name = name;
+
+	retval = of_property_read_string(np, "synaptics,reset-gpio-name", &name);
+	if (retval == -EINVAL)
+		bdata->reset_gpio_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->reset_gpio_name = name;
+
+	retval = of_property_read_string(np, "synaptics,irq-gpio-name", &name);
+	if (retval == -EINVAL)
+		bdata->irq_gpio_name = NULL;
+	else if (retval < 0)
+		return retval;
+	else
+		bdata->irq_gpio_name = name;
+
+	bdata->cut_off_power = of_property_read_bool(np, "synaptics,cut-off-power");
+
+	bdata->power_gpio = of_get_named_gpio_flags(np,
+			"synaptics,power-gpio", 0, NULL);
+	if (bdata->power_gpio >= 0) {
+		retval = of_property_read_u32(np, "synaptics,power-on-state",
+				&value);
+		if (retval < 0)
+			return retval;
+		else
+			bdata->power_on_state = value;
+	} else
+		bdata->power_gpio = -1;
+
+	retval = of_property_read_u32(np, "synaptics,power-delay-ms",
+			&value);
+	if (retval < 0)
+		bdata->power_delay_ms = 0;	/* No power delay by default */
+	else
+		bdata->power_delay_ms = value;
+
+	bdata->mdss_reset = of_get_named_gpio_flags(np,
+			"synaptics,mdss-dsi-reset", 0, NULL);
+	if (bdata->mdss_reset >= 0) {
+		retval = of_property_read_u32(np, "synaptics,mdss-reset-state",
+				&value);
+		if (retval < 0)
+			return retval;
+		else
+			bdata->mdss_reset_state = value;
+	} else
+		bdata->mdss_reset = -1;
+
+	bdata->reset_gpio = of_get_named_gpio_flags(np,
+			"synaptics,reset-gpio", 0, NULL);
+	if (bdata->reset_gpio >= 0) {
+		retval = of_property_read_u32(np, "synaptics,reset-on-state",
+				&value);
+		if (retval < 0)
+			return retval;
+		else
+			bdata->reset_on_state = value;
+
+		retval = of_property_read_u32(np, "synaptics,reset-active-ms",
+				&value);
+		if (retval < 0)
+			return retval;
+		else
+			bdata->reset_active_ms = value;
+	} else
+		bdata->reset_gpio = -1;
+
+	retval = of_property_read_u32(np, "synaptics,reset-delay-ms",
+			&value);
+	if (retval < 0)
+		bdata->reset_delay_ms = 200;	/* No reset delay by default */
+	else
+		bdata->reset_delay_ms = value;
+
+	retval = of_property_read_u32(np, "synaptics,max-y-for-2d",
+			&value);
+	if (retval < 0)
+		bdata->max_y_for_2d = -1;
+	else
+		bdata->max_y_for_2d = value;
+
+	bdata->swap_axes = of_property_read_bool(np, "synaptics,swap-axes");
+
+	bdata->x_flip = of_property_read_bool(np, "synaptics,x-flip");
+
+	bdata->y_flip = of_property_read_bool(np, "synaptics,y-flip");
+
+	retval = of_property_read_u32(np, "synaptics,ub-i2c-addr",
+			&value);
+	if (retval < 0)
+		bdata->ub_i2c_addr = -1;
+	else
+		bdata->ub_i2c_addr = (unsigned short)value;
+
+	prop = of_find_property(np, "synaptics,cap-button-codes", NULL);
+	if (prop && prop->length) {
+		bdata->cap_button_map->map = devm_kzalloc(dev,
+				prop->length,
+				GFP_KERNEL);
+		if (!bdata->cap_button_map->map)
+			return -ENOMEM;
+		bdata->cap_button_map->nbuttons = prop->length / sizeof(u32);
+		retval = of_property_read_u32_array(np,
+				"synaptics,cap-button-codes",
+				bdata->cap_button_map->map,
+				bdata->cap_button_map->nbuttons);
+		if (retval < 0) {
+			bdata->cap_button_map->nbuttons = 0;
+			bdata->cap_button_map->map = NULL;
+		}
+	} else {
+		bdata->cap_button_map->nbuttons = 0;
+		bdata->cap_button_map->map = NULL;
+	}
+
+	retval = of_property_read_string(np, "synaptics,short-jdi-25", &bdata->short_test25);
+	if (retval && (retval != -EINVAL)) {
+		dev_err(dev, "Unable to read jdi short type 25 value\n");
+		bdata->short_test25 = NULL;
+	}
+
+	retval = of_property_read_string(np, "synaptics,short-jdi-26", &bdata->short_test26);
+	if (retval && (retval != -EINVAL)) {
+		dev_err(dev, "Unable to read jdi short type 26 value\n");
+		bdata->short_test26 = NULL;
+	}
+
+	prop = of_find_property(np, "synaptics,vir-button-codes", NULL);
+	if (prop && prop->length) {
+		bdata->vir_button_map->map = devm_kzalloc(dev,
+				prop->length,
+				GFP_KERNEL);
+		if (!bdata->vir_button_map->map)
+			return -ENOMEM;
+		bdata->vir_button_map->nbuttons = prop->length / sizeof(u32);
+		bdata->vir_button_map->nbuttons /= 5;
+		retval = of_property_read_u32_array(np,
+				"synaptics,vir-button-codes",
+				bdata->vir_button_map->map,
+				bdata->vir_button_map->nbuttons * 5);
+		if (retval < 0) {
+			bdata->vir_button_map->nbuttons = 0;
+			bdata->vir_button_map->map = NULL;
+		}
+	} else {
+		bdata->vir_button_map->nbuttons = 0;
+		bdata->vir_button_map->map = NULL;
+	}
+
+	if (of_property_read_bool(np, "synaptics,product-id-as-lockdown"))
+		bdata->lockdown_area = LOCKDOWN_AREA_PRODUCT_ID;
+	else if (of_property_read_bool(np, "synaptics,guest-serialization-as-lockdown"))
+		bdata->lockdown_area = LOCKDOWN_AREA_GUEST_SERIALIZATION;
+	else
+		bdata->lockdown_area = LOCKDOWN_AREA_UNKNOWN;
+
+	prop = of_find_property(np, "synaptics,tp-id-byte", NULL);
+	if (prop && prop->length) {
+		bdata->tp_id_bytes = devm_kzalloc(dev,
+				prop->length,
+				GFP_KERNEL);
+		if (!bdata->tp_id_bytes)
+			return -ENOMEM;
+		bdata->tp_id_num = prop->length / sizeof(u8);
+		retval = of_property_read_u8_array(np,
+				"synaptics,tp-id-byte",
+				bdata->tp_id_bytes,
+				bdata->tp_id_num);
+		if (retval < 0) {
+			bdata->tp_id_num = 0;
+			bdata->tp_id_bytes = NULL;
+		}
+	} else {
+		dev_err(dev, "Don't know which byte of lockdown info to distinguish TP\n");
+		bdata->tp_id_num = 0;
+		bdata->tp_id_bytes = NULL;
+	}
+
+	retval = of_property_read_u32(np, "synaptics,config-array-size",
+		&bdata->config_array_size);
+	if (retval < 0) {
+		dev_err(dev, "Cannot get config array size\n");
+		return retval;
+	}
+
+	bdata->config_array = devm_kcalloc(dev, sizeof(struct synaptics_dsx_config_info),
+					bdata->config_array_size,
+					GFP_KERNEL);
+	if (!bdata->config_array) {
+		dev_err(dev, "Unable to allocate memory\n");
+		return -ENOMEM;
+	}
+
+	config_info = bdata->config_array;
+	for_each_child_of_node(np, temp) {
+		prop = of_find_property(temp, "synaptics,tp-id", NULL);
+		if (prop && prop->length) {
+			if (bdata->tp_id_num != prop->length / sizeof(u8)) {
+				dev_err(dev, "Invalid TP id length\n");
+				return -EINVAL;
+			}
+			config_info->tp_ids = devm_kzalloc(dev,
+					prop->length,
+					GFP_KERNEL);
+			if (!config_info->tp_ids)
+				return -ENOMEM;
+			retval = of_property_read_u8_array(temp,
+					"synaptics,tp-id",
+					config_info->tp_ids,
+					bdata->tp_id_num);
+			if (retval < 0) {
+				dev_err(dev, "Error reading TP id\n");
+				return -EINVAL;
+			}
+		} else if (bdata->tp_id_num == 0) {
+			/* No TP id indicated, skip */
+			config_info->tp_ids = NULL;
+		} else {
+			dev_err(dev, "Cannot find TP id\n");
+			return -EINVAL;
+		}
+
+		retval = of_property_read_string(temp, "synaptics,fw-name",
+			&config_info->fw_name);
+		if (retval && (retval != -EINVAL)) {
+			dev_err(dev, "Unable to read firmware name\n");
+			return retval;
+		}
+		config_info++;
+	};
+
+	dump_dt(dev, bdata);
+	return 0;
+}
+>>>>>>> 81d501e... BACKPORT: treewide: devm_kzalloc() -> devm_kcalloc()
 #endif
 
 #define SYN_I2C_RETRY_TIMES 10
