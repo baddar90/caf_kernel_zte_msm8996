@@ -772,7 +772,7 @@ static bool queue_cmd(struct edge_info *einfo, void *cmd, void *data)
 	d_cmd->param2 = _cmd->param2;
 	d_cmd->data = data;
 	list_add_tail(&d_cmd->list_node, &einfo->deferred_cmds);
-	queue_kthread_work(&einfo->kworker, &einfo->kwork);
+	kthread_queue_work(&einfo->kworker, &einfo->kwork);
 	return true;
 }
 
@@ -2269,8 +2269,8 @@ static int glink_smem_native_probe(struct platform_device *pdev)
 	init_xprt_if(einfo);
 	spin_lock_init(&einfo->write_lock);
 	init_waitqueue_head(&einfo->tx_blocked_queue);
-	init_kthread_work(&einfo->kwork, rx_worker);
-	init_kthread_worker(&einfo->kworker);
+	kthread_init_work(&einfo->kwork, rx_worker);
+	kthread_init_worker(&einfo->kworker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->read_from_fifo = read_from_fifo;
 	einfo->write_to_fifo = write_to_fifo;
@@ -2369,7 +2369,7 @@ request_irq_fail:
 	glink_core_unregister_transport(&einfo->xprt_if);
 reg_xprt_fail:
 smem_alloc_fail:
-	flush_kthread_worker(&einfo->kworker);
+	kthread_flush_worker(&einfo->kworker);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);
@@ -2456,8 +2456,8 @@ static int glink_rpm_native_probe(struct platform_device *pdev)
 	init_xprt_if(einfo);
 	spin_lock_init(&einfo->write_lock);
 	init_waitqueue_head(&einfo->tx_blocked_queue);
-	init_kthread_work(&einfo->kwork, rx_worker);
-	init_kthread_worker(&einfo->kworker);
+	kthread_init_work(&einfo->kwork, rx_worker);
+	kthread_init_worker(&einfo->kworker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->intentless = true;
 	einfo->read_from_fifo = memcpy32_fromio;
@@ -2617,7 +2617,7 @@ request_irq_fail:
 	glink_core_unregister_transport(&einfo->xprt_if);
 reg_xprt_fail:
 toc_init_fail:
-	flush_kthread_worker(&einfo->kworker);
+	kthread_flush_worker(&einfo->kworker);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);
@@ -2747,8 +2747,8 @@ static int glink_mailbox_probe(struct platform_device *pdev)
 	init_xprt_if(einfo);
 	spin_lock_init(&einfo->write_lock);
 	init_waitqueue_head(&einfo->tx_blocked_queue);
-	init_kthread_work(&einfo->kwork, rx_worker);
-	init_kthread_worker(&einfo->kworker);
+	kthread_init_work(&einfo->kwork, rx_worker);
+	kthread_init_worker(&einfo->kworker);
 	tasklet_init(&einfo->tasklet, rx_worker_atomic, (unsigned long)einfo);
 	einfo->read_from_fifo = read_from_fifo;
 	einfo->write_to_fifo = write_to_fifo;
@@ -2868,7 +2868,7 @@ request_irq_fail:
 	glink_core_unregister_transport(&einfo->xprt_if);
 reg_xprt_fail:
 smem_alloc_fail:
-	flush_kthread_worker(&einfo->kworker);
+	kthread_flush_worker(&einfo->kworker);
 	kthread_stop(einfo->task);
 	einfo->task = NULL;
 	tasklet_kill(&einfo->tasklet);
