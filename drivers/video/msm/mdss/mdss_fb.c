@@ -57,6 +57,7 @@
 #include "mdp3_ctrl.h"
 
 #include "mdss_livedisplay.h"
+u32 zte_frame_count;/*pan*/
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -277,6 +278,7 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 
 static int lcd_backlight_registered;
 
+#define MAX_BRIGHTNESS_EXIT_VRMODE 200
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
 {
@@ -1230,7 +1232,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 		pr_err("can't allocate framebuffer info data!\n");
 		return -ENOMEM;
 	}
-
+	zte_frame_count = 0;/*pan*/
 	mfd = (struct msm_fb_data_type *)fbi->par;
 	mfd->key = MFD_KEY;
 	mfd->fbi = fbi;
@@ -3711,6 +3713,9 @@ static int __mdss_fb_display_thread(void *data)
 	struct msm_fb_data_type *mfd = data;
 	int ret;
 	struct sched_param param;
+
+
+
 
 	/*
 	 * this priority was found during empiric testing to have appropriate
