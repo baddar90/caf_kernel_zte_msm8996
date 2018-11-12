@@ -2709,6 +2709,133 @@ static ssize_t blink_store(struct device *dev,
 	return count;
 }
 
+static inline void rgb_lock_leds(struct rgb_sync *rgb)
+{
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		if (rgb->led_data[i]) {
+			flush_work(&rgb->led_data[i]->work);
+			mutex_lock(&rgb->led_data[i]->lock);
+		}
+	}
+}
+
+static inline void rgb_unlock_leds(struct rgb_sync *rgb)
+{
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		if (rgb->led_data[i]) {
+			mutex_unlock(&rgb->led_data[i]->lock);
+		}
+	}
+}
+
+static void rgb_disable_leds(struct rgb_sync *rgb)
+{
+	int i;
+	struct qpnp_led_data *led;
+
+	//TODO Implement synchronized off
+	for (i = 0; i < 3; i++) {
+		led = rgb->led_data[i];
+		if (led && led->rgb_cfg->pwm_cfg->pwm_enabled) {
+			led->rgb_cfg->pwm_cfg->mode =
+				led->rgb_cfg->pwm_cfg->default_mode;
+			led->rgb_cfg->pwm_cfg->blinking = false;
+			pwm_disable(led->rgb_cfg->pwm_cfg->pwm_dev);
+			led->rgb_cfg->pwm_cfg->pwm_enabled = 0;
+		}
+	}
+}
+
+/**
+ * Should only be called when all RGB leds are off
+ */
+static int rgb_enable_leds(struct rgb_sync *rgb)
+{
+	struct qpnp_led_data *led;
+	struct pwm_device *pwm_dev[3];
+	int i, rc;
+
+	for (i = 0; i < 3; i++) {
+		led = rgb->led_data[i];
+		if (!led)
+			continue;
+
+		led->rgb_cfg->pwm_cfg->mode = LPG_MODE;
+		if (led->rgb_cfg->pwm_cfg->pwm_enabled) {
+			pwm_disable(led->rgb_cfg->pwm_cfg->pwm_dev);
+			led->rgb_cfg->pwm_cfg->pwm_enabled = 0;
+		}
+		qpnp_pwm_init(led->rgb_cfg->pwm_cfg, led->spmi_dev, led->cdev.name);
+		pwm_dev[i] = led->rgb_cfg->pwm_cfg->pwm_dev;
+	}
+
+	if (i == 0)
+		return 0;
+
+	rc = pwm_enable_synchronized(pwm_dev, i);
+	if (rc) {
+		dev_err(&rgb->spmi_dev->dev, "Unable to enable pwms\n");
+		return rc;
+	}
+
+	for (i = 0; i < 3; i++) {
+		led = rgb->led_data[i];
+		if (!led)
+			continue;
+		led->rgb_cfg->pwm_cfg->blinking = true;
+		led->rgb_cfg->pwm_cfg->pwm_enabled = 1;
+	}
+
+	return rc;
+}
+
+static ssize_t rgb_blink_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct rgb_sync *rgb_sync;
+	struct qpnp_led_data *led = NULL;
+	unsigned long blinking;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	ssize_t rc = -EINVAL, i;
+	u8 enable = 0;
+
+	rc = kstrtoul(buf, 10, &blinking);
+	if (rc)
+		return rc;
+	rgb_sync = container_of(led_cdev, struct rgb_sync, cdev);
+
+	rgb_lock_leds(rgb_sync);
+	for (i = 0; i < 3; i++) {
+		if (rgb_sync->led_data[i]) {
+			led = rgb_sync->led_data[i];
+			enable |= led->rgb_cfg->enable;
+		}
+	}
+
+	if (!led)
+		return count;
+
+	rc = qpnp_led_masked_write(led,
+		RGB_LED_EN_CTL(led->base),
+		enable, blinking ? enable : RGB_LED_DISABLE);
+	if (rc) {
+		dev_err(&led->spmi_dev->dev,
+			"Failed to write led enable reg\n");
+		rgb_unlock_leds(rgb_sync);
+		return rc;
+	}
+	rgb_disable_leds(rgb_sync);
+	if (blinking)
+		rgb_enable_leds(rgb_sync);
+	rgb_unlock_leds(rgb_sync);
+	return count;
+}
+
 static DEVICE_ATTR(led_mode, 0664, NULL, led_mode_store);
 static DEVICE_ATTR(strobe, 0664, NULL, led_strobe_type_store);
 static DEVICE_ATTR(pwm_us, 0664, NULL, pwm_us_store);
