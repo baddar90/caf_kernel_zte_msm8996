@@ -24,8 +24,6 @@
 #include <linux/string.h>
 #include <linux/display_state.h>
 
-#include "zte_lcd_common.h"
-
 #include "mdss_dsi.h"
 #include "mdss_debug.h"
 #ifdef TARGET_HW_MDSS_HDMI
@@ -3589,9 +3587,6 @@ int mdss_dsi_panel_init(struct device_node *node,
 		mutex_init(&zte_display_lock);
 		zte_display_init = 1;
 	}
-#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
-	zte_lcd_common_func(ctrl_pdata, node);
-#endif
 
 	mdss_dsi_panel_lcd_proc(node);
 	return 0;
