@@ -120,6 +120,7 @@ static struct zcomp_strm *zcomp_strm_multi_find(struct zcomp *comp)
 		/* allocate new zstrm stream */
 		zs->avail_strm++;
 		spin_unlock(&zs->strm_lock);
+
 		/*
 		 * This function can be called in swapout/fs write path
 		 * so we can't use GFP_FS|IO. And it assumes we already
