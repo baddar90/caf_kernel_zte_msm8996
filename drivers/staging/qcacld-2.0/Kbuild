@@ -1009,6 +1009,8 @@ endif
 EXTRA_CFLAGS += $(INCS)
 
 EXTRA_CFLAGS += -Wno-unused-function -Wno-unused-variable
+EXTRA_CFLAGS += $(call cc-option, -g0)
+EXTRA_CFLAGS += $(call cc-option, -Os)
 
 CDEFINES :=	-DANI_LITTLE_BYTE_ENDIAN \
 		-DANI_LITTLE_BIT_ENDIAN \
