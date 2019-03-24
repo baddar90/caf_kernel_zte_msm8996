@@ -6413,14 +6413,10 @@ wait:
 	if (fg_debug_mask & FG_STATUS)
 		pr_info("battery id = %d\n",
 				get_sram_prop_now(chip, FG_DATA_BATT_ID));
-#if defined(CONFIG_BOARD_AILSA_II)
-	profile_node = of_batterydata_get_best_profile(batt_node, "bms",
-							NULL);
-	fg_batt_type = NULL;
-#else
+
 	profile_node = of_batterydata_get_best_profile(batt_node, "bms",
 							fg_batt_type);
-#endif
+
 	if (IS_ERR_OR_NULL(profile_node)) {
 		rc = PTR_ERR(profile_node);
 		if (rc == -EPROBE_DEFER) {
