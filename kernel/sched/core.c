@@ -5376,7 +5376,16 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	unsigned long flags;
 	int cpu = get_cpu();
 
+#ifdef CONFIG_CPU_FREQ_STAT
+	cpufreq_task_stats_init(p);
+#endif
+
 	__sched_fork(clone_flags, p);
+
+#ifdef CONFIG_CPU_FREQ_STAT
+	cpufreq_task_stats_alloc(p);
+#endif
+
 	/*
 	 * We mark the process as running here. This guarantees that
 	 * nobody will actually run it, and a signal or other external

@@ -385,3 +385,5 @@ obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
 # akm-sungang support ak4490 chip begin
 obj-$(CONFIG_SND_SOC_AK4490)     += ak4490/
 # akm-sungang end
+snd-soc-tfa9890-objs := tfa9890/tfa98xx.o tfa9890/tfa_dsp.o tfa9890/tfa_container.o
+obj-y += snd-soc-tfa9890.o

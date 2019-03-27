@@ -579,6 +579,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct zte_lcd_ctrl_data zte_lcd_ctrl;
 #endif
 /*zte add common function for lcd module end*/
+	int lcd_power_1v8_en; //guozhiming modify for lcd 2015-10-15
 };
 
 struct dsi_status_data {

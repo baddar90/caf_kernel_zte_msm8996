@@ -56,10 +56,10 @@ static const struct usb_device_id usb_quirk_list[] = {
 	/* Microsoft LifeCam-VX700 v2.0 */
 	{ USB_DEVICE(0x045e, 0x0770), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Cherry Stream G230 2.0 (G85-231) and 3.0 (G85-232) */
-	{ USB_DEVICE(0x046a, 0x0023), .driver_info = USB_QUIRK_RESET_RESUME },
+        /* Cherry Stream G230 2.0 (G85-231) and 3.0 (G85-232) */
+        { USB_DEVICE(0x046a, 0x0023), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Logitech HD Pro Webcams C920, C920-C, C925e and C930e */
+	/* Logitech HD Pro Webcams C920 and C930e */
 	{ USB_DEVICE(0x046d, 0x082d), .driver_info = USB_QUIRK_DELAY_INIT },
 	{ USB_DEVICE(0x046d, 0x0841), .driver_info = USB_QUIRK_DELAY_INIT },
 	{ USB_DEVICE(0x046d, 0x0843), .driver_info = USB_QUIRK_DELAY_INIT },
@@ -224,40 +224,22 @@ static const struct usb_device_id usb_quirk_list[] = {
 	{ USB_DEVICE(0x1908, 0x1315), .driver_info =
 			USB_QUIRK_HONOR_BNUMINTERFACES },
 
-	/* Protocol and OTG Electrical Test Device */
-	{ USB_DEVICE(0x1a0a, 0x0200), .driver_info =
-			USB_QUIRK_LINEAR_UFRAME_INTR_BINTERVAL },
+	/* INTEL VALUE SSD */
+	{ USB_DEVICE(0x8086, 0xf1a5), .driver_info = USB_QUIRK_RESET_RESUME },
 
-	/* Corsair Strafe */
-	{ USB_DEVICE(0x1b1c, 0x1b15), .driver_info = USB_QUIRK_DELAY_INIT |
-	  USB_QUIRK_DELAY_CTRL_MSG },
-
-	/* Corsair Strafe RGB */
-	{ USB_DEVICE(0x1b1c, 0x1b20), .driver_info = USB_QUIRK_DELAY_INIT |
-	  USB_QUIRK_DELAY_CTRL_MSG },
-
-	/* Corsair K70 LUX RGB */
+ 	/* Corsair K70 LUX RGB */
 	{ USB_DEVICE(0x1b1c, 0x1b33), .driver_info = USB_QUIRK_DELAY_INIT },
 
-	/* Corsair K70 LUX */
-	{ USB_DEVICE(0x1b1c, 0x1b36), .driver_info = USB_QUIRK_DELAY_INIT },
-
-	/* MIDI keyboard WORLDE MINI */
-	{ USB_DEVICE(0x1c75, 0x0204), .driver_info =
-			USB_QUIRK_CONFIG_INTF_STRINGS },
-
-	/* Acer C120 LED Projector */
-	{ USB_DEVICE(0x1de1, 0xc102), .driver_info = USB_QUIRK_NO_LPM },
-
-	/* Blackmagic Design Intensity Shuttle */
-	{ USB_DEVICE(0x1edb, 0xbd3b), .driver_info = USB_QUIRK_NO_LPM },
-
-	/* Blackmagic Design UltraStudio SDI */
-	{ USB_DEVICE(0x1edb, 0xbd4f), .driver_info = USB_QUIRK_NO_LPM },
+	/* USB3503 */
+	{ USB_DEVICE(0x0424, 0x3503), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	/* Hauppauge HVR-950q */
 	{ USB_DEVICE(0x2040, 0x7200), .driver_info =
 			USB_QUIRK_CONFIG_INTF_STRINGS },
+
+        /* Protocol and OTG Electrical Test Device */
+	{ USB_DEVICE(0x1a0a, 0x0200), .driver_info =
+			USB_QUIRK_LINEAR_UFRAME_INTR_BINTERVAL },
 
 	/* Raydium Touchscreen */
 	{ USB_DEVICE(0x2386, 0x3114), .driver_info = USB_QUIRK_NO_LPM },
@@ -266,9 +248,6 @@ static const struct usb_device_id usb_quirk_list[] = {
 
 	/* DJI CineSSD */
 	{ USB_DEVICE(0x2ca3, 0x0031), .driver_info = USB_QUIRK_NO_LPM },
-
-	/* INTEL VALUE SSD */
-	{ USB_DEVICE(0x8086, 0xf1a5), .driver_info = USB_QUIRK_RESET_RESUME },
 
 	{ }  /* terminating entry must be last */
 };

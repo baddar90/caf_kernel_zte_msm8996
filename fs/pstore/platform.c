@@ -36,6 +36,7 @@
 #include <linux/hardirq.h>
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
+#include <linux/vmalloc.h>
 
 #include "internal.h"
 
@@ -299,9 +300,9 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		bool compressed;
 		size_t total_len;
 
-		if (big_oops_buf) {
+		if (big_oops_buf && is_locked) {
 			dst = big_oops_buf;
-			hsize = sprintf(dst, "%s#%d Part%d\n", why,
+			hsize = sprintf(dst, "%s#%d Part%u\n", why,
 							oopscount, part);
 			size = big_oops_buf_sz - hsize;
 
@@ -321,7 +322,7 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 			}
 		} else {
 			dst = psinfo->buf;
-			hsize = sprintf(dst, "%s#%d Part%d\n", why, oopscount,
+			hsize = sprintf(dst, "%s#%d Part%u\n", why, oopscount,
 									part);
 			size = psinfo->bufsize - hsize;
 			dst += hsize;
@@ -352,6 +353,14 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 static struct kmsg_dumper pstore_dumper = {
 	.dump = pstore_dump,
 };
+
+/*
+ * Register with kmsg_dump to save last part of console log on panic.
+ */
+static void pstore_register_kmsg(void)
+{
+	kmsg_dump_register(&pstore_dumper);
+}
 
 #ifdef CONFIG_PSTORE_CONSOLE
 static void pstore_console_write(struct console *con, const char *s, unsigned c)
@@ -444,8 +453,6 @@ static int pstore_write_buf_user_compat(enum pstore_type_id type,
  * read function right away to populate the file system. If not
  * then the pstore mount code will call us later to fill out
  * the file system.
- *
- * Register with kmsg_dump to save last part of console log on panic.
  */
 int pstore_register(struct pstore_info *psi)
 {
@@ -478,7 +485,7 @@ int pstore_register(struct pstore_info *psi)
 	if (pstore_is_mounted())
 		pstore_get_records(0);
 
-	kmsg_dump_register(&pstore_dumper);
+	pstore_register_kmsg();
 
 	if ((psi->flags & PSTORE_FLAGS_FRAGILE) == 0) {
 		pstore_register_console();
@@ -491,6 +498,12 @@ int pstore_register(struct pstore_info *psi)
 			msecs_to_jiffies(pstore_update_ms);
 		add_timer(&pstore_timer);
 	}
+
+	/*
+	 * Update the module parameter backend, so it is visible
+	 * through /sys/module/pstore/parameters/backend
+	 */
+	backend = psi->name;
 
 	pr_info("Registered %s as persistent store backend\n", psi->name);
 
@@ -533,7 +546,7 @@ void pstore_get_records(int quiet)
 							big_oops_buf_sz);
 
 			if (unzipped_len > 0) {
-				kfree(buf);
+				vfree(buf);
 				buf = big_oops_buf;
 				size = unzipped_len;
 				compressed = false;
@@ -547,7 +560,7 @@ void pstore_get_records(int quiet)
 				  compressed, (size_t)size, time, psi);
 		if (unzipped_len < 0) {
 			/* Free buffer other than big oops */
-			kfree(buf);
+			vfree(buf);
 			buf = NULL;
 		} else
 			unzipped_len = -1;

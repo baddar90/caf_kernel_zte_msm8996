@@ -20,7 +20,10 @@
 
 #include "zte_camera_sensor_util.h"
 #include "zte_eeprom.h"
-#include <linux/debugfs.h>
+
+#include <linux/proc_fs.h>
+bool pdaf_calibration_flag = false;
+uint32_t is_pdaf_supported = 0;
 
 /* Logging macro */
 #undef CDBG
@@ -1111,9 +1114,6 @@ CSID_TG:
 
 	pr_err("%s probe succeeded", slave_info->sensor_name);
 
-	s_ctrl->bypass_video_node_creation =
-		slave_info->bypass_video_node_creation;
-
 	/*
 	 * Update the subdevice id of flash-src based on availability in kernel.
 	 */
@@ -1182,6 +1182,10 @@ CSID_TG:
 	 * probed on this slot
 	 */
 	s_ctrl->is_probe_succeed = 1;
+
+	s_ctrl->bypass_video_node_creation =
+		slave_info->bypass_video_node_creation;
+
 	return rc;
 
 camera_power_down:
@@ -1319,6 +1323,12 @@ static int32_t msm_sensor_driver_get_dt_data(struct msm_sensor_ctrl_t *s_ctrl)
 	CDBG("%s qcom,mclk-23880000 = %d\n", __func__,
 		s_ctrl->set_mclk_23880000);
 
+	if (BACK_CAMERA_B == sensordata->sensor_info->position) {
+		if (0 > of_property_read_u32(of_node, "qcom,pdaf-support", &is_pdaf_supported)) {
+			CDBG("%s:%d Invalid pdaf supported\n", __func__, __LINE__);
+		}
+	}
+
 	return rc;
 
 FREE_VREG_DATA:
@@ -1399,6 +1409,38 @@ FREE_SENSOR_I2C_CLIENT:
 	return rc;
 }
 
+static ssize_t pdaf_proc_read(struct file *filp, char __user *buff,
+								   size_t len, loff_t *data)
+{
+	char value[2] = {0};
+
+	snprintf(value, sizeof(value), "%d", (is_pdaf_supported << 1 | pdaf_calibration_flag));
+
+	pr_err("%s, is_pdaf_supported=%d,calibration_flag=%d,value=%s\n", __func__,
+		  is_pdaf_supported, pdaf_calibration_flag, value);
+	return simple_read_from_buffer(buff, len, data, value,1);
+}
+
+static const struct file_operations pdaf_test_fops = {
+	.owner		= THIS_MODULE,
+	.read		= pdaf_proc_read,
+	//.write		= pdaf_proc_write,
+};
+
+static int msm_sensor_driver_pdaf_proc_init(void)
+{
+	int ret=0;
+	struct proc_dir_entry *proc_entry;
+
+	proc_entry = proc_create_data("pdaf_info", 0666, NULL, &pdaf_test_fops, NULL);
+	if (proc_entry == NULL)
+	{
+		ret = -ENOMEM;
+		pr_err("[%s]: Error! Couldn't create pdaf_calibration proc entry\n", __func__);
+	}
+	return ret;
+}
+
 static int32_t msm_sensor_driver_platform_probe(struct platform_device *pdev)
 {
 	int32_t rc = 0;
@@ -1439,6 +1481,8 @@ static int32_t msm_sensor_driver_platform_probe(struct platform_device *pdev)
 
 	/* Fill device in power info */
 	s_ctrl->sensordata->power_info.dev = &pdev->dev;
+	if (BACK_CAMERA_B == s_ctrl->sensordata->sensor_info->position)
+		msm_sensor_driver_pdaf_proc_init();
 	return rc;
 FREE_S_CTRL:
 	kfree(s_ctrl);

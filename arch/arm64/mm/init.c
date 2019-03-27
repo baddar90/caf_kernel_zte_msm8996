@@ -116,11 +116,15 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID
 int pfn_valid(unsigned long pfn)
 {
+<<<<<<< HEAD
 	phys_addr_t addr = pfn << PAGE_SHIFT;
 
 	if ((addr >> PAGE_SHIFT) != pfn)
 		return 0;
 	return memblock_is_memory(addr);
+=======
+	return (pfn & PFN_MASK) == pfn && memblock_is_memory(pfn << PAGE_SHIFT);
+>>>>>>> 0fefb4fd34749d6a3836df58f0d9fbf18198b9c3
 }
 EXPORT_SYMBOL(pfn_valid);
 #endif
