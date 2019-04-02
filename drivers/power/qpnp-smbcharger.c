@@ -43,8 +43,6 @@
 #include <linux/reboot.h>	/* zte add For kernel_power_off() */
 #include <soc/qcom/socinfo.h>
 #include <linux/pmic-voter.h>
-#include "oem_external_fg.h"
-#include <linux/type-c_notifier.h>
 #include <linux/wakelock.h>
 #include <linux/proc_fs.h>
 
