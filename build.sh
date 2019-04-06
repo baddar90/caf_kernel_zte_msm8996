@@ -1,8 +1,7 @@
 export KBUILD_BUILD_USER=baddar90
-export KBUILD_BUILD_HOST=hidden
 export ARCH=arm64
 export CROSS_COMPILE=$HOME/Desktop/toolchain-8.2/bin/aarch64-buildroot-linux-gnu-
-export CROSS_COMPILE_ARM32=$HOME/Desktop/arm32-toolchain/bin/arm-linux-androideabi-
+export CROSS_COMPILE_ARM32=$HOME/Desktop/arm-toolchain-8.2/bin/arm-buildroot-linux-gnueabihf-
 
 DIR=$(pwd)
 BUILD="$DIR/build"
