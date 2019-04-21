@@ -4283,11 +4283,20 @@ static int cpufreq_notifier_trans(struct notifier_block *nb,
 	return 0;
 }
 
+static const struct cpumask *adjust_cpumask(struct task_struct *p,
+					    const struct cpumask *req_mask)
+{
+	/* Force all performance-critical kthreads onto the big cluster */
+	if (p->flags & PF_PERF_CRITICAL)
+		return cpu_perf_mask;
+
+	return req_mask;
+}
+
 static int pwr_stats_ready_notifier(struct notifier_block *nb,
 				    unsigned long cpu, void *data)
 {
 	cpumask_t mask = CPU_MASK_NONE;
-
 	cpumask_set_cpu(cpu, &mask);
 	sched_update_freq_max_load(&mask);
 
@@ -8298,6 +8307,8 @@ static struct rq *move_queued_task(struct task_struct *p, int new_cpu)
 
 void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 {
+        new_mask = adjust_cpumask(p, new_mask);
+
 	if (p->sched_class && p->sched_class->set_cpus_allowed)
 		p->sched_class->set_cpus_allowed(p, new_mask);
 
@@ -8334,6 +8345,8 @@ int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask)
 	struct rq *rq;
 	unsigned int dest_cpu;
 	int ret = 0;
+
+        new_mask = adjust_cpumask(p, new_mask);
 
 	rq = task_rq_lock(p, &flags);
 
