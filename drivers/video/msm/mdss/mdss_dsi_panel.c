@@ -124,6 +124,7 @@ void  mdss_dsi_panel_lcd_proc(struct device_node *node)
 		pr_info("LCD %s: Panel Name = %s\n", __func__, panel_name);
 		strcpy(module_name,panel_name);
 	}
+}
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
