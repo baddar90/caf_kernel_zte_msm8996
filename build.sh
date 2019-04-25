@@ -3,9 +3,8 @@ export ARCH=arm64
 export CROSS_COMPILE=$HOME/Desktop/LINARO-8.3.0/bin/aarch64-linux-gnu-
 export CROSS_COMPILE_ARM32=$HOME/Desktop/arm-toolchain-8.2/bin/arm-buildroot-linux-gnueabihf-
 
-DIR=$(pwd)
-BUILD="$DIR/build"
-OUT="$DIR/out"
+BUILD="$HOME/build"
+OUT="$HOME/out"
 #NPR=`expr $(nproc) + 1`
 
 echo "cleaning build..."
