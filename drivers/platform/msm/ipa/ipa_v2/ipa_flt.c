@@ -852,7 +852,7 @@ int __ipa_commit_flt_v2(enum ipa_ip_type ip)
 		goto fail_desc;
 	}
 
-	cmd = kcalloc(16, sizeof(*cmd), GFP_ATOMIC);
+	cmd = kcalloc(16, sizeof(*cmd), flag);
 	if (cmd == NULL) {
 		IPAERR("fail to alloc cmd blob ip %d\n", ip);
 		rc = -ENOMEM;
