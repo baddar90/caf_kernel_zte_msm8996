@@ -8999,7 +8999,7 @@ static void update_heartbeat(struct work_struct *work)
 	if(smbchg_debug_mask == 0xFF)   //ZTE_PM used smbchg_debug_mask for log debug.
 		dump_regs(chip);
 
-		temp		=	get_prop_batt_temp(chip)/10;
+	temp		=	get_prop_batt_temp(chip)/10;
 		voltage		=	get_prop_batt_voltage_now(chip)/1000;
 		cap			=	get_prop_batt_capacity(chip);
 		status		=	get_prop_batt_status(chip);
@@ -9010,7 +9010,7 @@ static void update_heartbeat(struct work_struct *work)
 		usbin_v		=	zte_get_usbin_voltage_now(chip);
 		usb_current	=	smbchg_get_iusb(chip);
 		health = get_prop_batt_health(chip);
-		printk_counter++;
+	printk_counter++;
 
 		if ((usb_present) && (chg_current > 0) && ((charge_type_oem == 1) || (charge_type_oem == 2))
 			&& (chip->apsd_rerun_flag == 0) && (!socinfo_get_charger_flag())

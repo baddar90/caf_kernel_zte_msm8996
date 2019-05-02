@@ -1111,12 +1111,12 @@ __limIbssSearchAndDeletePeer(tpAniSirGlobal pMac,
 				limDeleteDphHashEntry(pMac,
 							pStaDs->staAddr,
 							peerIdx, psessionEntry);
-				}
+               			}
 				limReleasePeerIdx(pMac, peerIdx, psessionEntry);
 				/**
-				 * Send indication to upper layers only if ADD
-				 * STA was success i.e staid is Valid.
-				 */
+				* Send indication to upper layers only if ADD
+				* STA was success i.e staid is Valid.
+				*/
 				if (HAL_STA_INVALID_IDX != staIndex)
 					ibss_status_chg_notify(pMac, macAddr,
 						staIndex,
