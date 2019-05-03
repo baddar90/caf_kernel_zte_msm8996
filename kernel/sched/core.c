@@ -95,6 +95,17 @@
 #include <trace/events/sched.h>
 #include "walt.h"
 
+const char *task_event_names[] = {"PUT_PREV_TASK", "PICK_NEXT_TASK",
+				  "TASK_WAKE", "TASK_MIGRATE", "TASK_UPDATE",
+				"IRQ_UPDATE"};
+
+const char *migrate_type_names[] = {"GROUP_TO_RQ", "RQ_TO_GROUP",
+					 "RQ_TO_RQ", "GROUP_TO_GROUP"};
+
+ATOMIC_NOTIFIER_HEAD(migration_notifier_head);
+ATOMIC_NOTIFIER_HEAD(load_alert_notifier_head);
+>>>>>>> parent of 10de99b... kernel: Only expose su when daemon is running
+
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 {
 	if (hrtimer_active(period_timer))
