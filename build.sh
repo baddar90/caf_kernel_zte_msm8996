@@ -1,10 +1,10 @@
 export KBUILD_BUILD_USER=baddar90
 export ARCH=arm64
-export CROSS_COMPILE=$HOME/Desktop/GCC-8.3.1/bin/aarch64-linux-gnu-
+export CROSS_COMPILE=$HOME/build-tools-gcc/aarch64-linux-gnu/bin/aarch64-linux-gnu-
 export CROSS_COMPILE_ARM32=$HOME/Desktop/arm-toolchain-8.2/bin/arm-buildroot-linux-gnueabihf-
 
-BUILD="/home/build"
-OUT="/home/out"
+BUILD="/home/baddar/build"
+OUT="/home/baddar/out"
 #NPR=`expr $(nproc) + 1`
 
 echo "cleaning build..."
