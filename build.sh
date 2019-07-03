@@ -1,7 +1,7 @@
 export KBUILD_BUILD_USER=baddar90
 export ARCH=arm64
-export CROSS_COMPILE=$HOME/build-tools-gcc/aarch64-linux-gnu/bin/aarch64-linux-gnu-
-export CROSS_COMPILE_ARM32=$HOME/Desktop/arm-toolchain-8.2/bin/arm-buildroot-linux-gnueabihf-
+export CROSS_COMPILE=$HOME/arm64-gcc-10/bin/aarch64-linux-gnu-
+export CROSS_COMPILE_ARM32=$HOME/arm32-gcc-9.1/bin/arm-eabi-
 
 BUILD="/home/baddar/build"
 OUT="/home/baddar/out"
